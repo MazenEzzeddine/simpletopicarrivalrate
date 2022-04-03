@@ -1,7 +1,9 @@
 import org.apache.kafka.clients.admin.*;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.TopicPartitionInfo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -48,6 +50,8 @@ public class Rate {
     static Instant lastUpScaleDecision;
     static Instant lastDownScaleDecision;
     static boolean firstIteration= true;
+
+    static  TopicDescription td;
 
 
 
@@ -96,52 +100,103 @@ public class Rate {
         numberOfPartitions = offsets.size();
 
 
+       DescribeTopicsResult tdr =  admin.describeTopics(Collections.singletonList(topic));
+
+        td =tdr.values().get(topic).get();
+
+
+       log.info("topic has the following partitions {}", td.partitions().size() );
 
 
 
-        Map<TopicPartition, OffsetSpec> requestLatestOffsets = new HashMap<>();
-        //initialize consumer to lag to 0
+
+
+
+
+
+
+
+
+
+        //Map<TopicPartition, OffsetSpec> requestLatestOffsets = new HashMap<>();
+
+        Map<TopicPartition, OffsetSpec> requestLatestOffsets2 = new HashMap<>();
+
+
+        for(TopicPartitionInfo p :  td.partitions()){
+
+            requestLatestOffsets2.put(new TopicPartition(topic, p.partition()), OffsetSpec.latest());
+
+        }
+
+       /* //initialize consumer to lag to 0
         for (TopicPartition tp : offsets.keySet()) {
             requestLatestOffsets.put(tp, OffsetSpec.latest());
             partitionToLag.put(tp, 0L);
 
-        }
+        }*/
 
 
-        //blocking call to query latest offset
+       /* //blocking call to query latest offset
         Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> latestOffsets =
-                admin.listOffsets(requestLatestOffsets).all().get();
+                admin.listOffsets(requestLatestOffsets2).all().get();
 
         for (Map.Entry<TopicPartition, OffsetAndMetadata> e : offsets.entrySet()) {
-            long committedOffset = e.getValue().offset();
+           // long committedOffset = e.getValue().offset();
             long latestOffset = latestOffsets.get(e.getKey()).offset();
-            long lag = latestOffset - committedOffset;
+            //long lag = latestOffset - committedOffset;
 
 
-            previousPartitionToCommittedOffset.put(e.getKey(),
-                    currentPartitionToCommittedOffset.get(e.getKey()));
+          //  previousPartitionToCommittedOffset.put(e.getKey(),
+                    //currentPartitionToCommittedOffset.get(e.getKey()));
             previousPartitionToLastOffset.put(e.getKey(),
                     currentPartitionToLastOffset.get(e.getKey()));
 
 
 
-            currentPartitionToCommittedOffset.put(e.getKey(), committedOffset);
+           // currentPartitionToCommittedOffset.put(e.getKey(), committedOffset);
             currentPartitionToLastOffset.put(e.getKey(), latestOffset);
-            partitionToLag.put(e.getKey(), lag);
+            //partitionToLag.put(e.getKey(), lag);
 
 
         }
+        */
+        //////////////////////////////////////////////////////
+
+
+        Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> latestOffsets =
+                admin.listOffsets(requestLatestOffsets2).all().get();
+
+
+        for(TopicPartitionInfo p :  td.partitions()) {
+
+            TopicPartition t = new  TopicPartition(topic, p.partition());
+
+            long latestOffset = latestOffsets.get(t).offset();
+
+
+            previousPartitionToLastOffset.put(t,
+                    currentPartitionToLastOffset.get(t));
+
+
+
+            // currentPartitionToCommittedOffset.put(e.getKey(), committedOffset);
+            currentPartitionToLastOffset.put(t, latestOffset);
+        }
+
+
+
 
 
 
         ///////////////////////////////////////////////////
 
-        DescribeConsumerGroupsResult describeConsumerGroupsResult =
+     /*   DescribeConsumerGroupsResult describeConsumerGroupsResult =
                 admin.describeConsumerGroups(Collections.singletonList(Rate.CONSUMER_GROUP));
         KafkaFuture<Map<String, ConsumerGroupDescription>> futureOfDescribeConsumerGroupsResult =
                 describeConsumerGroupsResult.all();
         consumerGroupDescriptionMap = futureOfDescribeConsumerGroupsResult.get();
-
+*/
 
         if(!firstIteration){
             computeTotalArrivalRate();
@@ -197,7 +252,7 @@ public class Rate {
         double totalConsumptionRate=0;
         double totalArrivalRate =0;
 
-        double [] parrivalrates = new double[offsets.size()];
+        double [] parrivalrates = new double[td.partitions().size()];
 
       /*  long totalpreviouscommittedoffset = 0;
         long totalcurrentcommittedoffset = 0;
@@ -211,14 +266,18 @@ public class Rate {
         }*/
 
 
-        for (TopicPartition tp : offsets.keySet()) {
-            parrivalrates[tp.partition()] = (double)( currentPartitionToLastOffset.get(tp) -previousPartitionToLastOffset.get(tp) )/(double) sleep;
+
+
+
+        for (TopicPartitionInfo tpi : td.partitions()) {
+            TopicPartition tp = new TopicPartition(topic, tpi.partition());
+            parrivalrates[tpi.partition()] = (double)( currentPartitionToLastOffset.get(tp) -previousPartitionToLastOffset.get(tp) )/(double) sleep;
            log.info("Arrival rate into partiiton {} equal {}", tp.partition(),    parrivalrates[tp.partition()]);
         }
 
 
-        for (TopicPartition tp : offsets.keySet()) {
-           totalArrivalRate +=  parrivalrates[tp.partition()];
+        for (TopicPartitionInfo tpi : td.partitions()) {
+           totalArrivalRate +=  parrivalrates[tpi.partition()];
 
         }
 

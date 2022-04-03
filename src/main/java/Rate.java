@@ -28,10 +28,14 @@ public class Rate {
     public static Map<TopicPartition, Long> previousPartitionToCommittedOffset = new HashMap<>();
     public static Map<TopicPartition, Long> previousPartitionToLastOffset = new HashMap<>();
     public static Map<TopicPartition, Long> currentPartitionToLastOffset = new HashMap<>();
+
+    public static Map<TopicPartition, Long> previousPartitionToLastTimestamp = new HashMap<>();
+    public static Map<TopicPartition, Long> currentPartitionToLastTimestamp = new HashMap<>();
     public static Map<TopicPartition, Long> partitionToLag = new HashMap<>();
 
 
     static Long sleep;
+    static double doublesleep;
     static String topic;
     static String cluster;
     static Long poll;
@@ -61,6 +65,8 @@ public class Rate {
         readEnvAndCrateAdminClient();
         lastUpScaleDecision = Instant.now();
         lastDownScaleDecision = Instant.now();
+
+        doublesleep = (double) sleep/1000.0;
 
 
         while (true) {
@@ -173,15 +179,23 @@ public class Rate {
             TopicPartition t = new  TopicPartition(topic, p.partition());
 
             long latestOffset = latestOffsets.get(t).offset();
+            //long lastesttimestamp = latestOffsets.get(t).timestamp();
+
 
 
             previousPartitionToLastOffset.put(t,
                     currentPartitionToLastOffset.get(t));
 
 
+           /* previousPartitionToLastTimestamp.put(t,
+                    currentPartitionToLastTimestamp.get(t));*/
+
+
 
             // currentPartitionToCommittedOffset.put(e.getKey(), committedOffset);
+           // currentPartitionToLastTimestamp.put(t, lastesttimestamp);
             currentPartitionToLastOffset.put(t, latestOffset);
+
         }
 
 
@@ -247,12 +261,24 @@ public class Rate {
     }
 */
 
+    static  double previousarrivalRate=0;
+
 
     private static void computeTotalArrivalRate() throws ExecutionException, InterruptedException {
         double totalConsumptionRate=0;
+
         double totalArrivalRate =0;
 
+        double totalArrivalRate2 =0;
+
+
         double [] parrivalrates = new double[td.partitions().size()];
+
+
+        ///////////////////////////////////////////////////////
+
+        double [] parrivalrates2 = new double[td.partitions().size()];
+
 
       /*  long totalpreviouscommittedoffset = 0;
         long totalcurrentcommittedoffset = 0;
@@ -271,8 +297,18 @@ public class Rate {
 
         for (TopicPartitionInfo tpi : td.partitions()) {
             TopicPartition tp = new TopicPartition(topic, tpi.partition());
-            parrivalrates[tpi.partition()] = (double)( currentPartitionToLastOffset.get(tp) -previousPartitionToLastOffset.get(tp) )/(double) sleep;
+          // log.info("partition {} previous last offset {}, current last offset {}", tpi.partition(),previousPartitionToLastOffset.get(tp), currentPartitionToLastOffset.get(tp));
+            parrivalrates[tpi.partition()] = ( currentPartitionToLastOffset.get(tp) - previousPartitionToLastOffset.get(tp) )/doublesleep;
            log.info("Arrival rate into partiiton {} equal {}", tp.partition(),    parrivalrates[tp.partition()]);
+
+      /*      log.info("currentPartitionToLastTimestamp.get(tp) {}", currentPartitionToLastTimestamp.get(tp));
+
+            log.info("previousPartitionToLastTimestamp.get(tp) {}", previousPartitionToLastTimestamp.get(tp));
+*/
+
+           /* parrivalrates2[tpi.partition()] = (double)( currentPartitionToLastOffset.get(tp) - previousPartitionToLastOffset.get(tp))/
+                    (double)(currentPartitionToLastTimestamp.get(tp) - previousPartitionToLastTimestamp.get(tp));
+*/
         }
 
 
@@ -281,18 +317,40 @@ public class Rate {
 
         }
 
+   /*     log.info("totalArrivalRate {}",
+                totalArrivalRate);*/
+
+
+ /*       for (TopicPartitionInfo tpi : td.partitions()) {
+            totalArrivalRate2 +=  parrivalrates2[tpi.partition()];
+
+        }*/
+
 
 
      /*   totalConsumptionRate = ((double) (totalcurrentcommittedoffset - totalpreviouscommittedoffset) / (double)sleep);
         totalArrivalRate = ((double) (totalcurrentendoffset - totalpreviousendoffset) / (double)sleep);*/
 
-        log.info("totalArrivalRate {}",
-                totalArrivalRate * 1000.0);
+
+        if(totalArrivalRate> 20 && totalArrivalRate>1.5*previousarrivalRate) {
+            log.info("Woops sampling sync issue totalArrivalRate {}, adjustiçng", totalArrivalRate);
+
+            log.info("totalArrivalRate {}",
+                    previousarrivalRate);
+        } else {
+
+            log.info("totalArrivalRate {}",
+                    totalArrivalRate);
+            previousarrivalRate = totalArrivalRate;
+        }
+
 
    /*     log.info("time since last up scale decision is {}", Duration.between(lastUpScaleDecision, Instant.now()).toSeconds());
         log.info("time since last down scale decision is {}", Duration.between(lastUpScaleDecision, Instant.now()).toSeconds());*/
 
         // youMightWanttoScale(totalArrivalRate);
+
+
 
     }
 
